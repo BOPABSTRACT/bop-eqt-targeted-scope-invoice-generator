@@ -20,13 +20,9 @@ const BOP = {
 
 function formatDate(val: unknown): string {
   if (!val) return ''
-  if (val instanceof Date) {
-    return val.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })
-  }
+  if (val instanceof Date) return val.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })
   const d = new Date(String(val))
-  if (!isNaN(d.getTime())) {
-    return d.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })
-  }
+  if (!isNaN(d.getTime())) return d.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })
   return String(val)
 }
 
@@ -34,137 +30,170 @@ function sanitize(name: string): string {
   return name.replace(/[^a-zA-Z0-9_\-. ]/g, '_').trim()
 }
 
+const thinBorder: ExcelJS.Borders = {
+  top: { style: 'thin', color: { argb: 'FF000000' } },
+  bottom: { style: 'thin', color: { argb: 'FF000000' } },
+  left: { style: 'thin', color: { argb: 'FF000000' } },
+  right: { style: 'thin', color: { argb: 'FF000000' } },
+}
+
 async function buildExcelInvoice(row: Record<string, unknown>): Promise<Buffer> {
   const wb = new ExcelJS.Workbook()
   const ws = wb.addWorksheet('Summary')
 
-  ws.getColumn(1).width = 18
-  ws.getColumn(2).width = 28
-  ws.getColumn(3).width = 14
-  ws.getColumn(4).width = 14
-  ws.getColumn(5).width = 18
-  ws.getColumn(6).width = 14
-  ws.getColumn(7).width = 14
+  // Column widths matching reference
+  ws.getColumn(1).width = 14  // A
+  ws.getColumn(2).width = 26  // B
+  ws.getColumn(3).width = 14  // C
+  ws.getColumn(4).width = 14  // D
+  ws.getColumn(5).width = 16  // E
+  ws.getColumn(6).width = 12  // F
+  ws.getColumn(7).width = 12  // G
 
-  const gold = 'FFC8A96E'
-  const darkBg = 'FF0D0F14'
-  const headerBg = 'FF1a1a2a'
-  const white = 'FFE8E0D0'
-  const lightGray = 'FFbbbbbb'
-
-  function setCell(ws: ExcelJS.Worksheet, addr: string, value: ExcelJS.CellValue, opts: {
-    bold?: boolean, size?: number, color?: string, bg?: string,
-    align?: ExcelJS.Alignment['horizontal'], border?: boolean, italic?: boolean
-  } = {}) {
-    const cell = ws.getCell(addr)
-    cell.value = value
-    cell.font = {
-      name: 'Georgia',
-      size: opts.size ?? 10,
-      bold: opts.bold ?? false,
-      italic: opts.italic ?? false,
-      color: { argb: opts.color ?? white },
-    }
-    if (opts.bg) {
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: opts.bg } }
-    }
-    if (opts.align) {
-      cell.alignment = { horizontal: opts.align, vertical: 'middle' }
-    }
-    if (opts.border) {
-      cell.border = {
-        top: { style: 'thin', color: { argb: 'FF2a2a3a' } },
-        bottom: { style: 'thin', color: { argb: 'FF2a2a3a' } },
-        left: { style: 'thin', color: { argb: 'FF2a2a3a' } },
-        right: { style: 'thin', color: { argb: 'FF2a2a3a' } },
-      }
-    }
-  }
-
-  ws.getRow(1).height = 18
-  setCell(ws, 'A1', BOP.name, { bold: true, size: 13, color: gold })
-  setCell(ws, 'A2', BOP.address, { size: 10, color: lightGray })
-  setCell(ws, 'A3', BOP.city, { size: 10, color: lightGray })
-  setCell(ws, 'A4', BOP.phone, { size: 10, color: lightGray })
-
-  ws.getRow(6).height = 22
-  setCell(ws, 'A6', 'INVOICE', { bold: true, size: 20, color: gold })
-
-  ws.getRow(8).height = 16
-  setCell(ws, 'A8', 'Date:', { bold: true, color: gold })
-  setCell(ws, 'B8', formatDate(row['Date']))
-  setCell(ws, 'E8', 'Invoice #:', { bold: true, color: gold })
-  setCell(ws, 'F8', String(row['Invoice Number'] ?? ''))
-
-  ws.getRow(10).height = 16
-  setCell(ws, 'A10', 'Bill To:', { bold: true, color: gold })
-  setCell(ws, 'B10', BILL_TO.company, { bold: true })
-  setCell(ws, 'E10', 'Project:', { bold: true, color: gold })
-  setCell(ws, 'F10', BILL_TO.project)
-
-  setCell(ws, 'B11', BILL_TO.attn, { color: lightGray })
   const county = String(row['County'] ?? '')
   const state = String(row['State'] ?? 'PA')
-  setCell(ws, 'E11', 'County:', { bold: true, color: gold })
-  setCell(ws, 'F11', `${county}, ${state}`)
+  const flatRate = Number(row['Flat Rate'] ?? row['Total'] ?? 0)
 
-  setCell(ws, 'B12', BILL_TO.address, { color: lightGray })
-  setCell(ws, 'B13', BILL_TO.city, { color: lightGray })
+  function c(addr: string) { return ws.getCell(addr) }
 
-  ws.getRow(16).height = 16
-  setCell(ws, 'A16', 'Period:', { bold: true, color: gold })
-  setCell(ws, 'B16', String(row['Period'] ?? ''))
-  setCell(ws, 'G17', 'DUE UPON RECEIPT', { bold: true, color: gold, align: 'right' })
+  function label(addr: string, val: string, align: ExcelJS.Alignment['horizontal'] = 'right') {
+    const cell = c(addr)
+    cell.value = val
+    cell.font = { name: 'Calibri', size: 9 }
+    cell.alignment = { horizontal: align }
+  }
 
-  ws.getRow(18).height = 18
+  function value(addr: string, val: ExcelJS.CellValue, align: ExcelJS.Alignment['horizontal'] = 'left') {
+    const cell = c(addr)
+    cell.value = val
+    cell.font = { name: 'Calibri', size: 9 }
+    cell.alignment = { horizontal: align }
+  }
+
+  // Merge A1:G1 for BOP name
+  ws.mergeCells('A1:G1')
+  const nameCell = c('A1')
+  nameCell.value = BOP.name
+  nameCell.font = { name: 'Calibri', size: 10, bold: true }
+  nameCell.alignment = { horizontal: 'center' }
+
+  ws.mergeCells('A2:G2')
+  const addrCell = c('A2')
+  addrCell.value = BOP.address
+  addrCell.font = { name: 'Calibri', size: 10 }
+  addrCell.alignment = { horizontal: 'center' }
+
+  ws.mergeCells('A3:G3')
+  const cityCell = c('A3')
+  cityCell.value = BOP.city
+  cityCell.font = { name: 'Calibri', size: 10 }
+  cityCell.alignment = { horizontal: 'center' }
+
+  ws.mergeCells('A4:G4')
+  const phoneCell = c('A4')
+  phoneCell.value = BOP.phone
+  phoneCell.font = { name: 'Calibri', size: 10 }
+  phoneCell.alignment = { horizontal: 'center' }
+
+  ws.mergeCells('A6:G6')
+  const invTitle = c('A6')
+  invTitle.value = 'INVOICE'
+  invTitle.font = { name: 'Calibri', size: 10, bold: true }
+  invTitle.alignment = { horizontal: 'center' }
+
+  // Date / Invoice #
+  label('A8', 'Date:')
+  value('B8', formatDate(row['Date']))
+  label('E8', 'Invoice #:')
+  value('F8', String(row['Invoice Number'] ?? ''))
+
+  // Bill To
+  label('A10', 'Bill To:')
+  value('B10', BILL_TO.company)
+  label('E10', 'Project:')
+  value('F10', BILL_TO.project)
+
+  value('B11', BILL_TO.attn)
+  label('E11', 'County:')
+  value('F11', `${county}, ${state}`)
+
+  value('B12', BILL_TO.address)
+  value('B13', BILL_TO.city)
+
+  // Period
+  label('A16', 'Period:')
+  value('B16', String(row['Period'] ?? ''))
+
+  // DUE UPON RECEIPT in red
+  const dueCell = c('G17')
+  dueCell.value = 'DUE UPON RECEIPT'
+  dueCell.font = { name: 'Calibri', size: 9, color: { argb: 'FFFF0000' } }
+  dueCell.alignment = { horizontal: 'right' }
+
+  // Table header row 18 — light pink/red background matching reference FFF2DCDB
   const headers = ['File #', 'PID', 'Unit', 'County', 'Work Type', 'Flat Rate', 'Total']
   const cols = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+  ws.getRow(18).height = 16
   headers.forEach((h, i) => {
-    setCell(ws, `${cols[i]}18`, h, { bold: true, color: gold, bg: headerBg, border: true, align: 'center' })
+    const cell = c(`${cols[i]}18`)
+    cell.value = h
+    cell.font = { name: 'Calibri', size: 9, bold: true }
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2DCDB' } }
+    cell.alignment = { horizontal: 'center', vertical: 'middle' }
+    cell.border = thinBorder
   })
 
-  ws.getRow(19).height = 16
-  const flatRate = Number(row['Flat Rate'] ?? row['Total'] ?? 0)
-  setCell(ws, 'A19', String(row['File #'] ?? ''), { border: true })
-  setCell(ws, 'B19', String(row['PID'] ?? ''), { border: true })
-  setCell(ws, 'C19', String(row['Unit'] ?? ''), { border: true })
-  setCell(ws, 'D19', county, { border: true })
-  setCell(ws, 'E19', 'Targeted Scope', { border: true })
+  // Data row 19
+  const dataVals = [
+    String(row['File #'] ?? ''),
+    String(row['PID'] ?? ''),
+    String(row['Unit'] ?? ''),
+    county,
+    'Targeted Scope',
+  ]
+  dataVals.forEach((v, i) => {
+    const cell = c(`${cols[i]}19`)
+    cell.value = v
+    cell.font = { name: 'Calibri', size: 9 }
+    cell.alignment = { horizontal: 'center' }
+    cell.border = thinBorder
+  })
 
-  const flatCell = ws.getCell('F19')
+  const flatCell = c('F19')
   flatCell.value = flatRate
   flatCell.numFmt = '$#,##0.00'
-  flatCell.font = { name: 'Georgia', size: 10, color: { argb: white } }
-  flatCell.border = { top: { style: 'thin', color: { argb: 'FF2a2a3a' } }, bottom: { style: 'thin', color: { argb: 'FF2a2a3a' } }, left: { style: 'thin', color: { argb: 'FF2a2a3a' } }, right: { style: 'thin', color: { argb: 'FF2a2a3a' } } }
+  flatCell.font = { name: 'Calibri', size: 9 }
+  flatCell.border = thinBorder
 
-  const totalCell = ws.getCell('G19')
+  const totalCell = c('G19')
   totalCell.value = { formula: '=F19' }
   totalCell.numFmt = '$#,##0.00'
-  totalCell.font = { name: 'Georgia', size: 10, color: { argb: white } }
-  totalCell.border = { top: { style: 'thin', color: { argb: 'FF2a2a3a' } }, bottom: { style: 'thin', color: { argb: 'FF2a2a3a' } }, left: { style: 'thin', color: { argb: 'FF2a2a3a' } }, right: { style: 'thin', color: { argb: 'FF2a2a3a' } } }
+  totalCell.font = { name: 'Calibri', size: 9 }
+  totalCell.border = thinBorder
 
-  ws.getRow(20).height = 18
-  setCell(ws, 'B20', '1 File', { color: lightGray, italic: true })
-  setCell(ws, 'E20', 'Total', { bold: true, color: gold, align: 'right' })
+  // Totals row 20
+  const filesCell = c('B20')
+  filesCell.value = { formula: '=COUNTA(B19:B19)&" Files"' }
+  filesCell.font = { name: 'Calibri', size: 9, bold: true }
+  filesCell.alignment = { horizontal: 'right' }
 
-  const sumFlat = ws.getCell('F20')
+  const totalLbl = c('E20')
+  totalLbl.value = 'Total'
+  totalLbl.font = { name: 'Calibri', size: 9, bold: true }
+  totalLbl.alignment = { horizontal: 'right' }
+
+  const sumFlat = c('F20')
   sumFlat.value = { formula: '=SUM(F19:F19)' }
   sumFlat.numFmt = '$#,##0.00'
-  sumFlat.font = { name: 'Georgia', size: 10, bold: true, color: { argb: gold } }
+  sumFlat.font = { name: 'Calibri', size: 9, bold: true }
+  sumFlat.alignment = { horizontal: 'right' }
 
-  const sumTotal = ws.getCell('G20')
+  const sumTotal = c('G20')
   sumTotal.value = { formula: '=SUM(G19:G19)' }
   sumTotal.numFmt = '$#,##0.00'
-  sumTotal.font = { name: 'Georgia', size: 10, bold: true, color: { argb: gold } }
-
-  for (let r = 1; r <= 25; r++) {
-    for (let c = 1; c <= 7; c++) {
-      const cell = ws.getCell(r, c)
-      if (!cell.fill || (cell.fill as ExcelJS.FillPattern).fgColor?.argb === undefined) {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: darkBg } }
-      }
-    }
-  }
+  sumTotal.font = { name: 'Calibri', size: 9, bold: true }
+  sumTotal.alignment = { horizontal: 'right' }
+  sumTotal.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } }
 
   const buf = await wb.xlsx.writeBuffer()
   return Buffer.from(buf)
@@ -176,97 +205,77 @@ async function buildPdfInvoice(row: Record<string, unknown>): Promise<Buffer> {
 
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' })
 
-  const gold = [200, 169, 110] as [number, number, number]
-  const dark = [13, 15, 20] as [number, number, number]
-  const lightText = [180, 170, 155] as [number, number, number]
-  const white = [232, 224, 208] as [number, number, number]
+  const black = [0, 0, 0] as [number, number, number]
+  const red = [255, 0, 0] as [number, number, number]
+  const headerBg = [242, 220, 219] as [number, number, number] // FFF2DCDB
+  const white = [255, 255, 255] as [number, number, number]
 
-  doc.setFillColor(...dark)
+  // White background
+  doc.setFillColor(...white)
   doc.rect(0, 0, 612, 792, 'F')
 
+  // BOP Header - centered
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(16)
-  doc.setTextColor(...gold)
-  doc.text(BOP.name, 40, 55)
+  doc.setFontSize(11)
+  doc.setTextColor(...black)
+  doc.text(BOP.name, 306, 50, { align: 'center' })
 
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
-  doc.setTextColor(...lightText)
-  doc.text(BOP.address, 40, 70)
-  doc.text(BOP.city, 40, 82)
-  doc.text(BOP.phone, 40, 94)
+  doc.text(BOP.address, 306, 63, { align: 'center' })
+  doc.text(BOP.city, 306, 75, { align: 'center' })
+  doc.text(BOP.phone, 306, 87, { align: 'center' })
 
+  // INVOICE title - centered
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(28)
-  doc.setTextColor(...gold)
-  doc.text('INVOICE', 40, 135)
+  doc.setFontSize(11)
+  doc.text('INVOICE', 306, 115, { align: 'center' })
 
-  doc.setDrawColor(...gold)
+  // Thin separator line
+  doc.setDrawColor(...black)
   doc.setLineWidth(0.5)
-  doc.line(40, 145, 572, 145)
+  doc.line(40, 122, 572, 122)
 
+  // Date / Invoice # row
   doc.setFontSize(9)
-  doc.setFont('helvetica', 'bold')
-  doc.setTextColor(...gold)
-  doc.text('Date:', 40, 162)
   doc.setFont('helvetica', 'normal')
-  doc.setTextColor(...white)
-  doc.text(formatDate(row['Date']), 90, 162)
+  doc.setTextColor(...black)
+  doc.text('Date:', 100, 140, { align: 'right' })
+  doc.text(formatDate(row['Date']), 105, 140)
 
-  doc.setFont('helvetica', 'bold')
-  doc.setTextColor(...gold)
-  doc.text('Invoice #:', 380, 162)
-  doc.setFont('helvetica', 'normal')
-  doc.setTextColor(...white)
-  doc.text(String(row['Invoice Number'] ?? ''), 440, 162)
+  doc.text('Invoice #:', 420, 140, { align: 'right' })
+  doc.text(String(row['Invoice Number'] ?? ''), 425, 140)
 
-  doc.setFont('helvetica', 'bold')
-  doc.setTextColor(...gold)
-  doc.text('Bill To:', 40, 185)
-  doc.setFont('helvetica', 'bold')
-  doc.setTextColor(...white)
-  doc.text(BILL_TO.company, 90, 185)
+  // Bill To
+  doc.text('Bill To:', 100, 158, { align: 'right' })
+  doc.text(BILL_TO.company, 105, 158)
+  doc.text('Project:', 420, 158, { align: 'right' })
+  doc.text(BILL_TO.project, 425, 158)
 
-  doc.setFont('helvetica', 'bold')
-  doc.setTextColor(...gold)
-  doc.text('Project:', 380, 185)
-  doc.setFont('helvetica', 'normal')
-  doc.setTextColor(...white)
-  doc.text(BILL_TO.project, 430, 185)
-
-  doc.setFont('helvetica', 'normal')
-  doc.setTextColor(...lightText)
-  doc.text(BILL_TO.attn, 90, 198)
-
+  doc.text(BILL_TO.attn, 105, 170)
   const county = String(row['County'] ?? '')
   const state = String(row['State'] ?? 'PA')
-  doc.setFont('helvetica', 'bold')
-  doc.setTextColor(...gold)
-  doc.text('County:', 380, 198)
-  doc.setFont('helvetica', 'normal')
-  doc.setTextColor(...white)
-  doc.text(`${county}, ${state}`, 430, 198)
+  doc.text('County:', 420, 170, { align: 'right' })
+  doc.text(`${county}, ${state}`, 425, 170)
 
-  doc.setTextColor(...lightText)
-  doc.text(BILL_TO.address, 90, 211)
-  doc.text(BILL_TO.city, 90, 224)
+  doc.text(BILL_TO.address, 105, 182)
+  doc.text(BILL_TO.city, 105, 194)
 
-  doc.setFont('helvetica', 'bold')
-  doc.setTextColor(...gold)
-  doc.text('Period:', 40, 248)
-  doc.setFont('helvetica', 'normal')
-  doc.setTextColor(...white)
-  doc.text(String(row['Period'] ?? ''), 90, 248)
+  // Period
+  doc.text('Period:', 100, 215, { align: 'right' })
+  doc.text(String(row['Period'] ?? ''), 105, 215)
 
-  doc.setFont('helvetica', 'bold')
-  doc.setTextColor(...gold)
-  doc.text('DUE UPON RECEIPT', 572, 260, { align: 'right' })
+  // DUE UPON RECEIPT in red
+  doc.setTextColor(...red)
+  doc.text('DUE UPON RECEIPT', 572, 227, { align: 'right' })
+  doc.setTextColor(...black)
 
+  // Invoice table
   const flatRate = Number(row['Flat Rate'] ?? row['Total'] ?? 0)
   const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
 
   autoTable(doc, {
-    startY: 275,
+    startY: 240,
     head: [['File #', 'PID', 'Unit', 'County', 'Work Type', 'Flat Rate', 'Total']],
     body: [
       [
@@ -278,26 +287,26 @@ async function buildPdfInvoice(row: Record<string, unknown>): Promise<Buffer> {
         fmt.format(flatRate),
         fmt.format(flatRate),
       ],
-      ['', '1 File', '', '', 'Total', fmt.format(flatRate), fmt.format(flatRate)],
+      ['', `1 Files`, '', '', 'Total', fmt.format(flatRate), fmt.format(flatRate)],
     ],
-    theme: 'plain',
+    theme: 'grid',
     styles: {
       font: 'helvetica',
       fontSize: 9,
-      textColor: white,
-      fillColor: dark,
-      cellPadding: 6,
+      textColor: black,
+      fillColor: white,
+      cellPadding: 5,
+      lineColor: black,
+      lineWidth: 0.3,
     },
     headStyles: {
-      textColor: gold,
-      fillColor: [26, 26, 42],
+      textColor: black,
+      fillColor: headerBg,
       fontStyle: 'bold',
-      lineColor: [42, 42, 58],
-      lineWidth: 0.5,
+      halign: 'center',
     },
     bodyStyles: {
-      lineColor: [42, 42, 58],
-      lineWidth: 0.3,
+      halign: 'center',
     },
     columnStyles: {
       5: { halign: 'right' },
@@ -332,10 +341,12 @@ export async function POST(req: NextRequest) {
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i]
-      const invoiceNum = String(row['Invoice Number'] ?? `INV_${i + 1}`)
+      const invoiceNum = sanitize(String(row['Invoice Number'] ?? `INV_${i + 1}`))
       const fileNum = sanitize(String(row['File #'] ?? ''))
       const pid = sanitize(String(row['PID'] ?? ''))
-      const baseName = `${invoiceNum}_${fileNum}_${pid}`
+      const unit = sanitize(String(row['Unit'] ?? ''))
+      const county = sanitize(String(row['County'] ?? ''))
+      const baseName = `${invoiceNum} - ${fileNum} - ${pid} - ${unit} - ${county}`
 
       if (format === 'xlsx' || format === 'both') {
         try {
