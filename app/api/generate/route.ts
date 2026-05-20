@@ -327,7 +327,7 @@ export async function POST(req: NextRequest) {
       const pid = sanitize(String(row['PID'] ?? ''))
       const unit = sanitize(String(row['Unit'] ?? ''))
       const county = sanitize(String(row['County'] ?? ''))
-      const baseName = `${invoiceNum} - ${unit} - EQT Targeted Scope - ${pid} - Invoice - ${county}`
+    const baseName = `${invoiceNum} - ${fileNum} - ${pid} - ${unit} - EQT Targeted Scope - ${county} - Invoice`
 
       if (format === 'xlsx' || format === 'both') {
         try {
