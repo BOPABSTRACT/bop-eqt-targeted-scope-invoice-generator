@@ -5,9 +5,9 @@ import JSZip from 'jszip'
 
 const BILL_TO = {
   company: 'EQT Production Company',
-  attn: 'Attn: Zita Lammay',
-  address: 'P.O. Box 23425',
-  city: 'Pittsburgh, Pennsylvania 15222',
+  attn: 'Attn: Danielle St. Onge',
+  address: '2200 Energy Drive',
+  city: 'Canonsburg, PA 15317',
   project: 'EQT Targeted Scope',
 }
 
@@ -327,7 +327,7 @@ export async function POST(req: NextRequest) {
       const pid = sanitize(String(row['PID'] ?? ''))
       const unit = sanitize(String(row['Unit'] ?? ''))
       const county = sanitize(String(row['County'] ?? ''))
-    const baseName = `${invoiceNum} - ${fileNum} - ${pid} - ${unit} - EQT Targeted Scope - ${county} - Invoice`
+      const baseName = `${invoiceNum} - ${fileNum} - ${pid} - ${unit} - EQT Targeted Scope - ${county} - Invoice`
 
       if (format === 'xlsx' || format === 'both') {
         try {
